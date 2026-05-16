@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+agent.log
+agent_stdout.log
+database/agent.db
