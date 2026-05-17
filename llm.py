@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from dataclasses import dataclass, field
 from typing import Optional
 
 from openai import AsyncOpenAI
@@ -16,7 +17,41 @@ client = AsyncOpenAI(
 )
 
 
-async def _chat(model: str, prompt: str, timeout: float = 30.0, retries: int = 3) -> str:
+@dataclass
+class TokenUsage:
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.prompt_tokens + self.completion_tokens
+
+    def add(self, usage):
+        if usage:
+            self.prompt_tokens += getattr(usage, "prompt_tokens", 0) or 0
+            self.completion_tokens += getattr(usage, "completion_tokens", 0) or 0
+
+    def format(self) -> str:
+        return (
+            f"📊 Токены: {self.total:,} "
+            f"(вход: {self.prompt_tokens:,} / выход: {self.completion_tokens:,})"
+        )
+
+
+# Счётчик для текущего цикла — сбрасывается в начале каждого цикла
+_cycle_usage = TokenUsage()
+
+
+def reset_cycle_usage():
+    global _cycle_usage
+    _cycle_usage = TokenUsage()
+
+
+def get_cycle_usage() -> TokenUsage:
+    return _cycle_usage
+
+
+async def _chat(model: str, prompt: str, timeout: float = 30.0, retries: int = 3) -> tuple[str, TokenUsage]:
     for attempt in range(1, retries + 1):
         try:
             response = await asyncio.wait_for(
@@ -27,7 +62,10 @@ async def _chat(model: str, prompt: str, timeout: float = 30.0, retries: int = 3
                 ),
                 timeout=timeout,
             )
-            return response.choices[0].message.content.strip()
+            usage = TokenUsage()
+            usage.add(response.usage)
+            _cycle_usage.add(response.usage)
+            return response.choices[0].message.content.strip(), usage
         except asyncio.TimeoutError:
             logger.warning("LLM timeout on attempt %d/%d (model=%s)", attempt, retries, model)
         except Exception as e:
@@ -48,7 +86,7 @@ def _parse_json(raw: str) -> dict:
 async def score_relevance(title: str, text: str) -> Optional[dict]:
     prompt = templates.RELEVANCE_PROMPT.format(title=title, text=text[:800])
     try:
-        raw = await _chat("google/gemini-2.5-flash", prompt)
+        raw, _ = await _chat("google/gemini-2.5-flash", prompt)
         return _parse_json(raw)
     except json.JSONDecodeError:
         logger.error("Invalid JSON from score_relevance, skipping article: %s", title[:60])
@@ -73,7 +111,7 @@ async def get_embedding(text: str) -> Optional[list[float]]:
         return None
 
 
-async def generate_post(news: dict) -> str:
+async def generate_post(news: dict) -> tuple[str, TokenUsage]:
     industry = news.get("industry") or "AI"
     prompt = templates.POST_PROMPT.format(
         vendor_rule=templates._VENDOR_RULE,
@@ -81,10 +119,11 @@ async def generate_post(news: dict) -> str:
         text=news.get("text", "")[:1500],
         industry=industry,
     )
-    return await _chat("google/gemini-2.5-flash", prompt, timeout=45.0)
+    text, usage = await _chat("google/gemini-2.5-flash", prompt, timeout=45.0)
+    return text, usage
 
 
-async def generate_article(news: dict) -> str:
+async def generate_article(news: dict) -> tuple[str, TokenUsage]:
     prompt = templates.ARTICLE_PROMPT.format(
         vendor_rule=templates._VENDOR_RULE,
         company=news.get("company") or "Компания",
@@ -93,13 +132,14 @@ async def generate_article(news: dict) -> str:
         title=news.get("title", ""),
         text=news.get("text", "")[:3000],
     )
-    return await _chat("google/gemini-2.5-flash", prompt, timeout=90.0)
+    text, usage = await _chat("google/gemini-2.5-flash", prompt, timeout=90.0)
+    return text, usage
 
 
 async def extract_reject_pattern(url: str, comment: str) -> dict:
     prompt = templates.REJECT_PATTERN_PROMPT.format(url=url, comment=comment)
     try:
-        raw = await _chat("openai/gpt-4o-mini", prompt)
+        raw, _ = await _chat("openai/gpt-4o-mini", prompt)
         return _parse_json(raw)
     except (json.JSONDecodeError, Exception):
         logger.exception("extract_reject_pattern failed, using fallback")

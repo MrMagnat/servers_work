@@ -5,6 +5,7 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import bot
+import llm
 import memory
 import processor
 import searcher
@@ -19,6 +20,7 @@ scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 async def run_agent_cycle():
     session_id = datetime.now().strftime("%Y%m%d_%H%M")
     logger.info("Starting agent cycle: %s", session_id)
+    llm.reset_cycle_usage()
 
     try:
         await bot.send_message(TELEGRAM_CHAT_ID, "🔎 Ищу свежие новости об ИИ в бизнесе...")
@@ -64,9 +66,10 @@ async def run_agent_cycle():
             except Exception:
                 logger.exception("Failed to send news: %s", news.get("url"))
 
+        usage = llm.get_cycle_usage()
         await bot.send_message(
             TELEGRAM_CHAT_ID,
-            f"📊 Готово! Отправлено {sent_count} новостей."
+            f"📊 Готово! Отправлено {sent_count} новостей.\n{usage.format()}"
         )
         logger.info("Cycle %s complete: sent %d news items", session_id, sent_count)
 

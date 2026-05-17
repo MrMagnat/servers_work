@@ -169,3 +169,9 @@ def get_news_by_url(url: str) -> Optional[dict]:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM sent_news WHERE url = ?", (url,)).fetchone()
     return dict(row) if row else None
+
+
+def get_all_sent_urls() -> list[str]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT url FROM sent_news").fetchall()
+    return [r["url"] for r in rows]

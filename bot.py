@@ -36,6 +36,10 @@ def resolve_url(short_id: str) -> str | None:
 
 def setup():
     global app
+    # Restore URL registry from DB so old buttons keep working after restart
+    for url in memory.get_all_sent_urls():
+        _url_registry[_short_id(url)] = url
+
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("news", handle_news_command))
     app.add_handler(CallbackQueryHandler(handle_reject, pattern=r"^reject\|"))
@@ -142,9 +146,10 @@ async def handle_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stop_typing = asyncio.Event()
     typing_task = asyncio.create_task(_keep_typing(context.bot, query.message.chat_id, stop_typing))
     try:
-        post_text = await llm.generate_post(news)
+        post_text, usage = await llm.generate_post(news)
         memory.log_feedback(url, "post_tg", generated=post_text)
         await _safe_reply(query.message, f"📢 *Готовый пост:*\n\n{post_text}")
+        await query.message.reply_text(usage.format())
     except Exception:
         logger.exception("Failed to generate post for %s", url)
         await query.message.reply_text("⚠️ Ошибка при генерации поста.")
@@ -170,11 +175,12 @@ async def handle_article(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stop_typing = asyncio.Event()
     typing_task = asyncio.create_task(_keep_typing(context.bot, query.message.chat_id, stop_typing))
     try:
-        article_text = await llm.generate_article(news)
+        article_text, usage = await llm.generate_article(news)
         memory.log_feedback(url, "article", generated=article_text)
         for chunk in templates.split_message(article_text, 4096):
             await _safe_reply(query.message, chunk)
             await asyncio.sleep(0.5)
+        await query.message.reply_text(usage.format())
     except Exception:
         logger.exception("Failed to generate article for %s", url)
         await query.message.reply_text("⚠️ Ошибка при генерации статьи.")
