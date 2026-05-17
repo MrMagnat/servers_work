@@ -1,7 +1,9 @@
 import asyncio
 import hashlib
 import logging
+import time
 
+import httpx
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction
 from telegram.ext import (
@@ -16,7 +18,7 @@ from telegram.ext import (
 import llm
 import memory
 import templates
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, EXA_API_KEY, OPENROUTER_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,7 @@ def setup():
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("news", handle_news_command))
+    app.add_handler(CommandHandler("status", handle_status_command))
     app.add_handler(CallbackQueryHandler(handle_reject, pattern=r"^reject\|"))
     app.add_handler(CallbackQueryHandler(handle_post, pattern=r"^post\|"))
     app.add_handler(CallbackQueryHandler(handle_article, pattern=r"^article\|"))
@@ -187,6 +190,52 @@ async def handle_article(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         stop_typing.set()
         typing_task.cancel()
+
+
+async def _check_url(client: httpx.AsyncClient, url: str, **kwargs) -> tuple[bool, int]:
+    t = time.monotonic()
+    try:
+        r = await client.get(url, timeout=5.0, **kwargs)
+        ms = int((time.monotonic() - t) * 1000)
+        return r.status_code < 500, ms
+    except Exception:
+        return False, -1
+
+
+async def handle_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
+        return
+
+    await context.bot.send_chat_action(chat_id=update.message.chat_id, action=ChatAction.TYPING)
+    msg = await update.message.reply_text("🔄 Проверяю сервисы...")
+
+    async with httpx.AsyncClient() as client:
+        tg_ok, tg_ms = await _check_url(client, "https://api.telegram.org")
+        exa_ok, exa_ms = await _check_url(
+            client,
+            "https://api.exa.ai/search",
+            headers={"x-api-key": EXA_API_KEY},
+        )
+        or_ok, or_ms = await _check_url(
+            client,
+            "https://openrouter.ai/api/v1/models",
+            headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
+        )
+
+    def line(name, ok, ms):
+        icon = "✅" if ok else "❌"
+        ping = f"{ms} мс" if ms >= 0 else "недоступен"
+        return f"{icon} {name}: {ping}"
+
+    text = (
+        "🖥 *Статус сервисов*\n\n"
+        f"🟢 Сервер: работает\n"
+        f"{line('Telegram API', tg_ok, tg_ms)}\n"
+        f"{line('Exa', exa_ok, exa_ms)}\n"
+        f"{line('OpenRouter', or_ok, or_ms)}"
+    )
+
+    await msg.edit_text(text, parse_mode="Markdown")
 
 
 async def handle_news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
