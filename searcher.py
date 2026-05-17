@@ -10,14 +10,31 @@ from config import EXA_API_KEY
 logger = logging.getLogger(__name__)
 
 SEARCH_QUERIES = [
-    "AI agent implementation real business case results 2024 2025",
-    "artificial intelligence ROI enterprise deployment case study",
-    "LLM automation company productivity gains measurable",
-    "AI agents workflow automation business success story",
-    "machine learning implementation manufacturing retail finance results",
-    "generative AI business process automation case study",
-    "AI customer service operations cost reduction results",
-    "computer vision AI industrial automation success",
+    # Реальные кейсы с цифрами
+    "AI agents business implementation ROI results 2025",
+    "company deployed AI agents saved hours costs reduced 2025",
+    "AI automation case study measurable results enterprise 2025",
+
+    # По отраслям
+    "AI agents healthcare hospital clinic implementation results",
+    "AI automation retail ecommerce revenue increase case study",
+    "AI agents finance banking insurance deployment results 2025",
+    "AI automation logistics supply chain real results",
+    "AI agents HR recruiting onboarding automation company",
+
+    # По типу внедрения
+    "LLM agents customer support cost reduction real company",
+    "AI copilot employee productivity increase company case",
+    "generative AI sales marketing automation business results",
+    "AI agents software development engineering productivity",
+
+    # Русскоязычные
+    "внедрение ИИ-агентов бизнес результаты кейс 2025",
+    "автоматизация ИИ компания экономия результаты",
+
+    # Свежие форматы
+    "startup AI agents product launched customers results",
+    "SMB small business AI automation ROI case study 2025",
 ]
 
 RSS_FEEDS = [
